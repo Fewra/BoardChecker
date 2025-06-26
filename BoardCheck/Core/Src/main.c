@@ -21,7 +21,11 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <string.h>
+#include <stdio.h>
 
+#include "periph_check.h"
+#include "json.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -73,6 +77,7 @@ static void MX_USB_OTG_FS_USB_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+
 /* USER CODE END 0 */
 
 /**
@@ -113,7 +118,71 @@ int main(void)
   MX_USART3_UART_Init();
   MX_USART6_UART_Init();
   MX_USB_OTG_FS_USB_Init();
+
   /* USER CODE BEGIN 2 */
+
+  struct periph_check pc;
+  char json[256] = {0};
+
+
+  //0. Инициализация
+  HAL_Delay(1000);
+  if (pc_init(&pc) == 0) {
+	  json_send_report(json, "board", "valid", "init successful");
+  }
+  else {
+	  json_send_report(json, "board", "invalid", "init error");
+	  return (-1);
+  }
+
+	 //ожидание нажатия кнопки далее (?)
+	 //HAL_Delay(1000);
+
+	 //1. Проверка навигационного приёмника
+	 //1.1 Проверка целостности контрольной суммы пакетов NMEA
+	 /*
+	 if (pc_gps_recv_nmea(&pc) == 0){
+		send_report(json, "gps", "valid", "gps nmea successfull");
+	 } else {
+	  send_report(json, "gps", "invalid", "gps nmea error");
+	 }
+	 */
+
+	 //ожидание нажатия кнопки далее (?)
+	 //HAL_Delay(1000);
+
+	 //1.2 Определение наличия сигнала 1PPS
+
+	 //2. Проверка компаса
+	 //2.1 Проверка ответа по адресу I2C
+
+	 /*
+	 if (									() == 0){
+		json_send_report(json, "compass", "valid", "compass i2c address successful");
+	 } else {
+	  json_send_report(json, "compass", "invalid", "compass i2c address error");
+	 }
+	 */
+
+	 //ожидание нажатия кнопки далее (?)
+	 //HAL_Delay(1000);
+
+	 //2.2 Калибровка компаса
+
+	 //ожидание перемещения в положение 1
+	 //HAL_Delay(1000);
+
+	 //измерение магнитного поля, калибровка
+
+	 //if (1/*если магнитное поле измерено и калибровка произошла для положения 1*/){
+	 //   json_send_report(json, "compass", "checkup", "place device pocition 2");
+	 //} else {
+	 //   json_send_report(json, "compass", "invalid", "position 1 calibration error");
+	 //}
+
+
+	 //ожидание перемещения в положение 2
+	 //HAL_Delay(1000);
 
   /* USER CODE END 2 */
 
@@ -498,8 +567,8 @@ static void MX_USB_OTG_FS_USB_Init(void)
 static void MX_GPIO_Init(void)
 {
   GPIO_InitTypeDef GPIO_InitStruct = {0};
-/* USER CODE BEGIN MX_GPIO_Init_1 */
-/* USER CODE END MX_GPIO_Init_1 */
+  /* USER CODE BEGIN MX_GPIO_Init_1 */
+  /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOE_CLK_ENABLE();
@@ -543,8 +612,8 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Alternate = GPIO_AF10_OTG_FS;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-/* USER CODE BEGIN MX_GPIO_Init_2 */
-/* USER CODE END MX_GPIO_Init_2 */
+  /* USER CODE BEGIN MX_GPIO_Init_2 */
+  /* USER CODE END MX_GPIO_Init_2 */
 }
 
 /* USER CODE BEGIN 4 */
