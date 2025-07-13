@@ -76,6 +76,37 @@ static void MX_USB_OTG_FS_USB_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void UART_Echo(void)
+{
+    uint8_t rx_buffer[64] = {0};  // Буфер для приёма
+    uint8_t length = 0;
+
+    while (1)
+    {
+        // Читаем 1 байт (можно больше, если хочешь)
+        if (HAL_UART_Receive(&huart3, &rx_buffer[length], 1, HAL_MAX_DELAY) == HAL_OK)
+        {
+            // Если получили символ конца строки, отправляем всё обратно
+            if (rx_buffer[length] == '\n' || rx_buffer[length] == '\r')
+            {
+                rx_buffer[length + 1] = '\0'; // Для читаемости
+                HAL_UART_Transmit(&huart3, rx_buffer, length + 1, 100);
+                length = 0;  // Сбрасываем для нового сообщения
+            }
+            else
+            {
+                length++;
+                if (length >= sizeof(rx_buffer) - 1)
+                {
+                    // Если переполнение буфера — отправляем что есть
+                    HAL_UART_Transmit(&huart3, rx_buffer, length, 100);
+                    length = 0;
+                }
+            }
+        }
+    }
+}
+
 void send_json_data(const struct JsonData *jd)
 {
     char msg[128];
@@ -95,6 +126,23 @@ void send_json_data(const struct JsonData *jd)
     // Разделитель для читаемости
     const char *divider = "-----------------------\r\n";
     HAL_UART_Transmit(&huart3, (uint8_t*)divider, strlen(divider), 100);
+}
+
+void I2C_Scan(void) {
+    HAL_StatusTypeDef result;
+    uint8_t i;
+
+    for (i = 1; i < 128; i++) {
+        /*
+         * HAL_I2C_IsDeviceReady:
+         * Проверяет, готово ли устройство с указанным адресом (7 бит)
+         * к обмену данными. Выполняет несколько попыток.
+         */
+        result = HAL_I2C_IsDeviceReady(&hi2c1, (uint16_t)(i << 1), 1, 10);
+        if (result == HAL_OK) {
+            int x = 0;
+        }
+    }
 }
 /* USER CODE END 0 */
 
@@ -139,321 +187,11 @@ int main(void)
 
   /* USER CODE BEGIN 2 */
 
-  HAL_Delay(1000);
+  HAL_Delay(500);
   struct periph_check pc;
   char json[256] = {0};
   struct JsonData jd;
-
-  //ожидание json "board", "checking", "start init board"
-  wait_for_json(&jd);
-
-  //0. Инициализация
-  if (strcmp(jd.message, "start init board") == 0)
-  {
-	  if (pc_init(&pc) == 0) {
-		  json_send_report(json, "board", "valid", "init successful");
-	  } else {
-		  json_send_report(json, "board", "invalid", "init error");
-		  return (-1);
-	  }
-
-	  clear_JsonData(&jd);
-  }
-  else
-  {
-	  return -1;
-  }
-
-  //ожидание json "gps", "checking", "start check nmea"
-  wait_for_json(&jd);
-
-  if (strcmp(jd.message, "start check nmea") == 0)
-  {
-	  //1. Проверка навигационного приёмника
-	  //1.1 Проверка целостности контрольной суммы пакетов NMEA
-	  if (pc_gps_recv_nmea(&pc) == 0){
-		  json_send_report(json, "gps", "valid", "gps nmea successfull");
-	  } else {
-		  json_send_report(json, "gps", "invalid", "gps nmea error");
-	  }
-	  clear_JsonData(&jd);
-  }
-  else
-  {
-	  return -1;
-  }
-
-  //ожидание json "gps", "checking", "start check 1pps"
-  //wait_for_json();
-  //if (json->message == "start check 1pps")
-
-  //1.2 Определение наличия сигнала 1PPS
-
-  //2. Проверка компаса
-
-  //ожидание json "compass", "checking", "start check i2c addr"
-  wait_for_json(&jd);
-
-  if (strcmp(jd.message, "start check i2c addr") == 0)
-  {
-	  //2.1 Проверка ответа по адресу I2C
-	  if (HAL_I2C_IsDeviceReady(&hi2c2, 0x00, 3, 100) == HAL_OK){
-		  json_send_report(json, "compass", "checking", "i2c address valid");
-	  } else {
-		  json_send_report(json, "compass", "invalid", "i2c address invalid");
-	  }
-	  clear_JsonData(&jd);
-  }
-  else
-  {
-	  return -1;
-  }
-  //2.2 Калибровка компаса
-
-  //ожидание json "compass", "checking", "start calibration position 1"
-  wait_for_json(&jd);
-  if (strcmp(jd.message, "start calibration position 1") == 0)
-  {
-	  //измерение магнитного поля в положении 1, калибровка
-	  if (compass_calibr_pos1(&pc) == 0){
-		  json_send_report(json, "compass", "checking", "calibration position 1 done");
-	  } else {
-		  json_send_report(json, "compass", "invalid", "calibration position 1 failure");
-	  }
-	  clear_JsonData(&jd);
-  }
-  else
-  {
-	  return -1;
-  }
-  //ожидание json "compass", "checking", "start calibration position 2"
-  wait_for_json(&jd);
-  if (strcmp(jd.message, "start calibration position 2") == 0)
-  {
-	  //измерение магнитного поля в положении 2, калибровка
-	  if (compass_calibr_pos2(&pc) == 0){
-		  json_send_report(json, "compass", "checking", "calibration position 2 done");
-	  } else {
-		  json_send_report(json, "compass", "invalid", "calibration position 2 failure");
-	  }
-	  clear_JsonData(&jd);
-  }
-  else
-  {
-	  return -1;
-  }
-
-  //2.3 Проверка компаса по осям x и y
-
-  //ожидание json "compass", "checking", "start checking position 1"
-  wait_for_json(&jd);
-  if (strcmp(jd.message, "start checking position 1") == 0)
-  {
-	  if (compass_check_pos1(&pc) == 0){
-		  json_send_report(json, "compass", "checking", "cheking position 1 done");
-	  } else {
-		  json_send_report(json, "compass", "invalid", "cheking position 1 failure");
-	  }
-	  clear_JsonData(&jd);
-  }
-  else
-	{
-	  return -1;
-	}
-
-  //ожидание json "compass", "checking", "start checking position 2"
-  wait_for_json(&jd);
-  if (strcmp(jd.message, "start checking position 2") == 0)
-  {
-	  if (compass_check_pos2(&pc) == 0){
-		  json_send_report(json, "compass", "checking", "cheking position 2 done");
-	  } else {
-		  json_send_report(json, "compass", "invalid", "cheking position 2 failure");
-	  }
-	  clear_JsonData(&jd);
-  }
-  else
-  	{
-  	  return -1;
-  	}
-
-  //Кнопка "Далее"
-
-  //3. Проверка гироскопа
-
-  //ожидание json "compass", "checking", "start checking i2c addr"
-  wait_for_json(&jd);
-  if (strcmp(jd.message, "start checking i2c addr") == 0)
-  {
-	  //3.1 Проверка ответа по адресу I2C
-	  if (HAL_I2C_IsDeviceReady(&hi2c2, 0x00, 3, 100) == HAL_OK){
-		  json_send_report(json, "gyro", "checking", "i2c address valid");
-	  } else {
-		  json_send_report(json, "gyro", "invalid", "i2c address invalid");
-	  }
-	  clear_JsonData(&jd);
-  }
-  else
-  {
-	  return -1;
-  }
-  //ожидание json "gyro", "checking", "calibration position 1"
-  wait_for_json(&jd);
-  if (strcmp(jd.message, "start calibration position 1") == 0)
-  {
-	  //измерение ускорений и угловых скоростей в положении 1, калибровка
-	  if (gyro_calibr_pos1(&pc) == 0){
-		  json_send_report(json, "gyro", "checking", "calibration position 1 done");
-	  } else {
-		  json_send_report(json, "gyro", "invalid", "calibration position 1 failure");
-	  }
-	  clear_JsonData(&jd);
-  }
-  else
-    {
-  	  return -1;
-    }
-  //Кнопка "Далее"
-  //Надпись "Поместите плату в положение 2 и нажмите Калибровка"
-
-  //Ожидание нажатия кнопки "Калибровка"
-  //от верхнего уровня приходит json {"gyro", "checking", "calibration position 2"}
-  //если нажата кнопка "Калибровка"
-
-  wait_for_json(&jd);
-  if (strcmp(jd.message, "start calibration position 2") == 0)
-  {
-	  //измерение ускорений и угловых скоростей в положении 2, калибровка
-	  if (gyro_calibr_pos1(&pc) == 0){
-		  json_send_report(json, "gyro", "checking", "calibration position 2 done");
-	  } else {
-		  json_send_report(json, "gyro", "invalid", "calibration position 2 failure");
-	  }
-	  clear_JsonData(&jd);
-  }
-  else
-  {
-	  return -1;
-  }
-  //3.3 Проверка показаний гироскопа в двух положениях
-  //Кнопка "Далее"
-  //Надпись "Поместите плату в положение 1 и нажмите Проверка"
-
-  //Ожидание нажатия кнопки "Проверка"
-  //от верхнего уровня приходит json {"guro", "checking", "checking position 1"}
-  //если нажата кнопка "Проверка"
-
-  wait_for_json(&jd);
-  if (strcmp(jd.message, "checking position 1") == 0)
-  {
-	  //проверка данных гироскопа в положении 1
-	  if (gyro_check_pos1(&pc) == 0){
-		  json_send_report(json, "gyro", "checking", "cheking position 1 done");
-	  } else {
-		  json_send_report(json, "gyro", "invalid", "cheking position 1 failure");
-	  }
-	  clear_JsonData(&jd);
-  }
-  else
-  {
-	  return -1;
-  }
-  //Кнопка "Далее"
-  //Надпись "Поместите плату в положение 2 и нажмите Проверка"
-
-  //Ожидание нажатия кнопки "Проверка"
-  //от верхнего уровня приходит json {"gyro", "checking", "checking position 2"}
-  //если нажата кнопка "Калибровка"
-
-  //проверка данных гироскопа в положении 2
-
-  wait_for_json(&jd);
-  if (strcmp(jd.message, "checking position 2") == 0)
-  {
-	  if (gyro_check_pos2(&pc) == 0){
-		  json_send_report(json, "gyro", "checking", "cheking position 2 done");
-	  } else {
-		  json_send_report(json, "gyro", "invalid", "cheking position 2 failure");
-	  }
-	  clear_JsonData(&jd);
-  }
-  else
-  {
-	  return -1;
-  }
-
-  //Кнопка "Далее"
-
-
-  //4. 	Проверка переключателей
-  //от верхнего уровня ждем json {"switсhes", "checking", "start check position down"}
-  wait_for_json(&jd);
-  if (strcmp(jd.message, "start check position down") == 0)
-  {
-	  pc.position = GPIO_PIN_SET;
-	  if (switch_check(&pc) == 0) {
-		  json_send_report(json, "switсhes", "checking", "cheking position down done");
-	  }
-	  else {
-		  json_send_report(json, "switсhes", "checking", "cheking position down error");
-	  }
-
-	  clear_JsonData(&jd);
-  }
-  else
-  {
-	  return -1;
-  }
-
-//  //от верхнего уровня ждем json {"switсhes", "checking", "start check position up"}
-  wait_for_json(&jd);
-  if (strcmp(jd.message, "start check position up") == 0)
-  {
-	  pc.position = GPIO_PIN_RESET;
-	  if (switch_check(&pc) == 0) {
-		  json_send_report(json, "switсhes", "checking", "cheking position up done");
-		}
-	  else {
-		  json_send_report(json, "switсhes", "checking", "cheking position up error");
-	  }
-	  clear_JsonData(&jd);
-  }
-  else
-  {
-	  return -1;
-  }
-
-
-  //5. Проверка реле
-  //от верхнего уровня ждем json {"relay", "checking", "start check"}
-  wait_for_json(&jd);
-  if (strcmp(jd.message, "start check") == 0)
-  {
-	  relay_check();
-	  clear_JsonData(&jd);
-  }
-  else
-  {
-	  return -1;
-  }
-
-  //6. Проверка GSM
-  wait_for_json(&jd);
   struct JsonData json_data;
-  if (strcmp(jd.message, "start check gsm") == 0)
-  {
-	  if(gsm_check(&pc, &json_data) == 0) {
-		  json_send_report(json, "gsm", "checking", "done");
-	  }
-	  else {
-		  json_send_report(json, "gsm", "checking", "error");
-	  }
-	  clear_JsonData(&jd);
-  }
-  else
-  {
-	  return -1;
-  }
 
   /* USER CODE END 2 */
 
@@ -461,6 +199,239 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  wait_for_json(&jd);
+
+	  //ожидание json "board", "checking", "start init board"
+	  //0. Инициализация
+	  if (strcmp(jd.message, "start init board") == 0)
+	  {
+		  if (pc_init(&pc) == 0) {
+			  QMC5883L_Init();
+			  // MPU6050_Init(&hi2c1);
+			  json_send_report(json, "board", "valid", "init successful");
+		  } else {
+			  json_send_report(json, "board", "invalid", "init error");
+		  }
+
+		  clear_JsonData(&jd);
+	  }
+
+	  //ожидание json "gps", "checking", "start check nmea"
+	  else if (strcmp(jd.message, "start check nmea") == 0)
+	  {
+		  //1. Проверка навигационного приёмника
+		  //1.1 Проверка целостности контрольной суммы пакетов NMEA
+		  if (pc_gps_recv_nmea(&pc) == 0){
+			  json_send_report(json, "gps", "valid", "gps nmea successfull");
+		  } else {
+			  json_send_report(json, "gps", "invalid", "gps nmea error");
+		  }
+		  clear_JsonData(&jd);
+	  }
+
+	  //2 Проверка компаса
+	  //2.1 Проверка наличия компаса на линии
+	  //ожидание json "compass", "checking", "start check i2c addr"
+	  else if (strcmp(jd.message, "start check i2c addr") == 0)
+	  {
+		  //2.1 Проверка ответа по адресу I2C
+		  if (HAL_I2C_IsDeviceReady(&hi2c1, 0x0D << 1, 3, 100) == HAL_OK){
+			  json_send_report(json, "compass", "checking", "i2c address valid");
+		  } else {
+			  json_send_report(json, "compass", "invalid", "i2c address invalid");
+		  }
+		  clear_JsonData(&jd);
+	  }
+	  //2.2 Калибровка компаса
+
+	  //ожидание json "compass", "checking", "start calibration position 1"
+	  else if (strcmp(jd.message, "start calibration position 1") == 0)
+	  {
+		  //измерение магнитного поля в положении 1, калибровка
+		  if (compass_calibr_pos1(&pc) == 0){
+			  json_send_report(json, "compass", "checking", "calibration position 1 done");
+		  } else {
+			  json_send_report(json, "compass", "invalid", "calibration position 1 failure");
+		  }
+		  clear_JsonData(&jd);
+	  }
+
+	  //ожидание json "compass", "checking", "start calibration position 2"
+	  else if (strcmp(jd.message, "start calibration position 2") == 0)
+	  {
+		  //измерение магнитного поля в положении 2, калибровка
+		  if (compass_calibr_pos2(&pc) == 0){
+			  json_send_report(json, "compass", "checking", "calibration position 2 done");
+		  } else {
+			  json_send_report(json, "compass", "invalid", "calibration position 2 failure");
+		  }
+		  clear_JsonData(&jd);
+	  }
+
+	  //2.3 Проверка компаса по осям x и y
+	  //ожидание json "compass", "checking", "start checking position 1"
+	  else if (strcmp(jd.message, "start checking position 1") == 0)
+	  {
+		  if (compass_check_pos1(&pc) == 0){
+			  json_send_report(json, "compass", "checking", "cheking position 1 done");
+		  } else {
+			  json_send_report(json, "compass", "invalid", "cheking position 1 failure");
+		  }
+		  clear_JsonData(&jd);
+	  }
+
+	  //ожидание json "compass", "checking", "start checking position 2"
+	  else if (strcmp(jd.message, "start checking position 2") == 0)
+	  {
+		  if (compass_check_pos2(&pc) == 0){
+			  json_send_report(json, "compass", "checking", "cheking position 2 done");
+		  } else {
+			  json_send_report(json, "compass", "invalid", "cheking position 2 failure");
+		  }
+		  clear_JsonData(&jd);
+	  }
+
+	  //Кнопка "Далее"
+
+	  //3. Проверка гироскопа
+	  // ПОТОМ НАДО БУДЕТ ПОМЕНЯТЬ i2c1 на i2c2
+
+	  //ожидание json "gyro", "checking", "start checking i2c addr"
+	  else if (strcmp(jd.message, "start checking i2c addr") == 0)
+	  {
+		  //3.1 Проверка ответа по адресу I2C
+		  if (HAL_I2C_IsDeviceReady(&hi2c1, 0x68 << 1, 3, 100) == HAL_OK){
+			  json_send_report(json, "gyro", "checking", "i2c address valid");
+		  } else {
+			  json_send_report(json, "gyro", "invalid", "i2c address invalid");
+		  }
+		  clear_JsonData(&jd);
+	  }
+
+	  //ожидание json "gyro", "checking", "calibration position 1"
+	  else if (strcmp(jd.message, "start calibration position 1") == 0)
+	  {
+		  //измерение ускорений и угловых скоростей в положении 1, калибровка
+		  if (gyro_calibr_pos1(&pc) == 0){
+			  json_send_report(json, "gyro", "checking", "calibration position 1 done");
+		  } else {
+			  json_send_report(json, "gyro", "invalid", "calibration position 1 failure");
+		  }
+		  clear_JsonData(&jd);
+	  }
+
+	  //Кнопка "Далее"
+	  //Надпись "Поместите плату в положение 2 и нажмите Калибровка"
+
+	  //Ожидание нажатия кнопки "Калибровка"
+	  //от верхнего уровня приходит json {"gyro", "checking", "calibration position 2"}
+	  //если нажата кнопка "Калибровка"
+
+	  else if (strcmp(jd.message, "start calibration position 2") == 0)
+	  {
+		  //измерение ускорений и угловых скоростей в положении 2, калибровка
+		  if (gyro_calibr_pos1(&pc) == 0){
+			  json_send_report(json, "gyro", "checking", "calibration position 2 done");
+		  } else {
+			  json_send_report(json, "gyro", "invalid", "calibration position 2 failure");
+		  }
+		  clear_JsonData(&jd);
+	  }
+	  //3.3 Проверка показаний гироскопа в двух положениях
+	  //Кнопка "Далее"
+	  //Надпись "Поместите плату в положение 1 и нажмите Проверка"
+
+	  //Ожидание нажатия кнопки "Проверка"
+	  //от верхнего уровня приходит json {"gyro", "checking", "checking position 1"}
+	  //если нажата кнопка "Проверка"
+
+	  else if (strcmp(jd.message, "checking position 1") == 0)
+	  {
+		  //проверка данных гироскопа в положении 1
+		  if (gyro_check_pos1(&pc) == 0){
+			  json_send_report(json, "gyro", "checking", "cheking position 1 done");
+		  } else {
+			  json_send_report(json, "gyro", "invalid", "cheking position 1 failure");
+		  }
+		  clear_JsonData(&jd);
+	  }
+
+	  //Кнопка "Далее"
+	  //Надпись "Поместите плату в положение 2 и нажмите Проверка"
+
+	  //Ожидание нажатия кнопки "Проверка"
+	  //от верхнего уровня приходит json {"gyro", "checking", "checking position 2"}
+	  //если нажата кнопка "Калибровка"
+
+	  //проверка данных гироскопа в положении 2
+
+	  else if (strcmp(jd.message, "checking position 2") == 0)
+	  {
+		  if (gyro_check_pos2(&pc) == 0){
+			  json_send_report(json, "gyro", "checking", "cheking position 2 done");
+		  } else {
+			  json_send_report(json, "gyro", "invalid", "cheking position 2 failure");
+		  }
+		  clear_JsonData(&jd);
+	  }
+
+	  //Кнопка "Далее"
+
+
+	  //4. 	Проверка переключателей
+	  //от верхнего уровня ждем json {"switсhes", "checking", "start check position down"}
+	  else if (strcmp(jd.message, "start check position down") == 0)
+	  {
+		  pc.position = GPIO_PIN_SET;
+		  if (switch_check(&pc) == 0) {
+			  json_send_report(json, "switches", "checking", "checking position down done");
+		  }
+		  else {
+			  json_send_report(json, "switches", "checking", "checking position down error");
+		  }
+
+		  clear_JsonData(&jd);
+	  }
+
+	  //от верхнего уровня ждем json {"switсhes", "checking", "start check position up"}
+	  else if (strcmp(jd.message, "start check position up") == 0)
+	  {
+		  pc.position = GPIO_PIN_RESET;
+		  if (switch_check(&pc) == 0) {
+			  json_send_report(json, "switсhes", "checking", "cheking position up done");
+			}
+		  else {
+			  json_send_report(json, "switсhes", "checking", "cheking position up error");
+		  }
+		  clear_JsonData(&jd);
+	  }
+
+
+	  //5. Проверка реле
+	  //от верхнего уровня ждем json {"relay", "checking", "start check"}
+	  else if (strcmp(jd.message, "start check") == 0)
+	  {
+		  relay_check();
+		  clear_JsonData(&jd);
+	  }
+
+	  //6. Проверка GSM
+	  else if (strcmp(jd.message, "start check gsm") == 0)
+	  {
+		  if(gsm_check(&pc, &json_data) == 0) {
+			  json_send_report(json, "gsm", "checking", "done");
+		  }
+		  else {
+			  json_send_report(json, "gsm", "checking", "error");
+		  }
+		  clear_JsonData(&jd);
+	  }
+	  else
+	  {
+		  json_send_report(json, "json", "error", "unknown json");
+		  clear_JsonData(&jd);
+	  }
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -792,7 +763,7 @@ static void MX_USART6_UART_Init(void)
 
   /* USER CODE END USART6_Init 1 */
   huart6.Instance = USART6;
-  huart6.Init.BaudRate = 115200;
+  huart6.Init.BaudRate = 9600;
   huart6.Init.WordLength = UART_WORDLENGTH_8B;
   huart6.Init.StopBits = UART_STOPBITS_1;
   huart6.Init.Parity = UART_PARITY_NONE;

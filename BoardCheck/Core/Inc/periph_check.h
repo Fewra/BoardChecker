@@ -52,6 +52,7 @@ int pc_gps_parce_nmea(struct periph_check* pc, uint8_t* buf, size_t len);
 int pc_gps_recv_nmea(struct periph_check* pc);
 
 //compass
+int QMC5883L_Init(void);
 int pc_compass_check_addr();
 uint8_t HMC5883L_IsReady(void);
 int compass_calibr_pos1(struct periph_check* pc);

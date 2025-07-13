@@ -11,21 +11,20 @@
 #include <stdlib.h>
 #include <math.h>
 
-#define CNT_GYRO_CALIBR (10)
 #define DEVIATION (1.1)
-#define A_X_REF (0.0)
-#define A_Y_REF (0.0)
-#define A_Z_REF (0.0)
-#define G_X_REF (0.0)
-#define G_Y_REF (0.0)
-#define G_Z_REF (0.0)
+#define CNT_GYRO_CALIBR (10)
+#define A_X_REF (0.05)
+#define A_Y_REF (0.05)
+#define A_Z_REF (0.05)
+#define G_X_REF (0.3)
+#define G_Y_REF (0.3)
+#define G_Z_REF (0.3)
 
 #define CNT_COMPASS_CALIBR (10)
-#define MAGN_X_REF (0)
-#define MAGN_Y_REF (0)
-#define MAGN_Z_REF (0)
+#define MAGN_X_REF (10)
+#define MAGN_Y_REF (10)
+#define MAGN_Z_REF (10)
 
-//#include "stm32f4xx_hal_uart.h"
 
 extern I2C_HandleTypeDef hi2c1;
 extern I2C_HandleTypeDef hi2c2;
@@ -72,36 +71,41 @@ int pc_gps_recv_nmea(struct periph_check* pc)
    int retval = -1;
 
    //принимаем один байт данных
-   while(HAL_UART_Receive(&huart6, uart6_recv_buf, 1, 3) != HAL_OK ) {}
+   if (HAL_UART_Receive(&huart6, uart6_recv_buf, 1, HAL_MAX_DELAY) != HAL_OK ) {
+	   return retval;
+   }
 
    //если обнаружили начало пакета NMEA
-   if (uart6_recv_buf[0] == '$'){
-
-      //накапливаем символы пакета NMEA в массив nmea_message за исключением '$' пока не достигнем конца строки
-      while (uart6_recv_buf[0] != '\r'){
-         while(HAL_UART_Receive(&huart6, uart6_recv_buf, 1, 3) != HAL_OK ) {}
-	        nmea_message[i] = uart6_recv_buf[0];
-		    i++;
-      }
-      i = 0;
-
-      //вычисляем контрольную сумму пакета и сверяем её с указанной в конце пакета
-      if (pc_gps_parce_nmea(pc, nmea_message, sizeof(nmea_message)/sizeof(nmea_message[0])) != 0){
-    	 char error_text[] = "checksum error!\r\n";
-         HAL_UART_Transmit(&huart3, (uint8_t*)error_text, strlen((char*)error_text), 3);
-      } else {
-         char match_text[] = "checksum match!\r\n";
-         HAL_UART_Transmit(&huart3, (uint8_t*)match_text, strlen((char*)match_text), 3);
-         retval = 0;
-      }
-
-      char text_devide[] = "\r\n\r\n";
-      HAL_UART_Transmit(&huart3, (uint8_t*)text_devide, strlen((char*)text_devide), 3);
-
-      for (int j = 0; j < (sizeof(nmea_message)/sizeof(nmea_message[0])); j++){
-         nmea_message[j] = 0;
-      }
+   while (uart6_recv_buf[0] != '$'){
+	   HAL_UART_Receive(&huart6, uart6_recv_buf, 1, 3);
    }
+
+  //накапливаем символы пакета NMEA в массив nmea_message за исключением '$' пока не достигнем конца строки
+  while (uart6_recv_buf[0] != '\r'){
+
+	 while(HAL_UART_Receive(&huart6, uart6_recv_buf, 1, 3) != HAL_OK ) {}
+		nmea_message[i] = uart6_recv_buf[0];
+		i++;
+  }
+  i = 0;
+
+  //вычисляем контрольную сумму пакета и сверяем её с указанной в конце пакета
+  if (pc_gps_parce_nmea(pc, nmea_message, sizeof(nmea_message)/sizeof(nmea_message[0])) != 0){
+	 char error_text[] = "checksum error!\r\n";
+	 HAL_UART_Transmit(&huart3, (uint8_t*)error_text, strlen((char*)error_text), 3);
+  } else {
+	 char match_text[] = "checksum match!\r\n";
+	 HAL_UART_Transmit(&huart3, (uint8_t*)match_text, strlen((char*)match_text), 3);
+	 retval = 0;
+  }
+
+  char text_devide[] = "\r\n\r\n";
+  HAL_UART_Transmit(&huart3, (uint8_t*)text_devide, strlen((char*)text_devide), 3);
+
+  for (int j = 0; j < (sizeof(nmea_message)/sizeof(nmea_message[0])); j++){
+	 nmea_message[j] = 0;
+  }
+
    return (retval);
 }
 
@@ -236,6 +240,34 @@ int gsm_check(struct periph_check* pc, struct JsonData* jd) {
 }
 
 ////////////////////////////////////////////////////// COMPASS //////////////////////////////////////////////////////////////////////
+int QMC5883L_Init(void)
+{
+    HAL_StatusTypeDef res;
+
+    // --- 1. Soft Reset ---
+    // Регистр 0x0A — Control 2 Register
+    // Бит 7 — Soft Reset
+    uint8_t reset[2] = {0x0A, 0x80};  // 0b10000000
+    res = HAL_I2C_Master_Transmit(&hi2c1, (0x0D << 1), reset, 2, HAL_MAX_DELAY);
+    if (res != HAL_OK) {
+    	return -1;
+    }
+
+    HAL_Delay(10);  // Небольшая задержка для применения сброса
+
+    // --- 2. Настройка Control Register 1 ---
+    // Пример: OSR=512, RNG=8G, ODR=200Hz, Continuous Mode
+    // 0x1D = 00011101b:
+    // OSR[7:6]=00 (512), RNG[5:4]=11 (8G), ODR[3:2]=10 (200Hz), MODE[1:0]=01 (Continuous)
+    uint8_t config[2] = {0x09, 0x1D};
+    res = HAL_I2C_Master_Transmit(&hi2c1, (0x0D << 1), config, 2, HAL_MAX_DELAY);
+    if (res != HAL_OK) {
+    	return -1;
+    }
+
+    HAL_Delay(10);  // Дать немного времени на применение настроек
+    return 0;
+}
 
 int compass_calibr_pos1(struct periph_check* pc){
 
@@ -254,18 +286,6 @@ int compass_calibr_pos1(struct periph_check* pc){
 	pc->magn_y_calibr = sum_magn_y/CNT_COMPASS_CALIBR;
 	pc->magn_z_calibr = sum_magn_z/CNT_COMPASS_CALIBR;
 
-	/*
-	char uart3_buf[64] = {0};
-	sprintf(uart3_buf,
-	"/r/n compass_calibr_pos1 \r\n"
-	"magn_x_calibr = %d\r\n"
-	"magn_y_calibr = %d\r\n"
-	"magn_z_calibr = %d\r\n"
-	pc->magn_x_calibr,
-	pc->magn_y_calibr,
-	pc->magn_z_calibr);
-	HAL_UART_Transmit(&huart3, (uint8_t*)uart3_buf, strlen(uart3_buf), 3);
-	*/
 
 //проверка
 	if ((pc->magn_x_calibr == 0) && (pc->magn_y_calibr == 0) && (pc->magn_z_calibr == 0)) {
@@ -316,13 +336,24 @@ int compass_calibr_pos2(struct periph_check* pc){
 
 int compass_check_pos1(struct periph_check* pc){
 
-	int retval = -1;
+	int retval = 0;
 	uint8_t qmc_raw[6] = {0};
 	int32_t sum_magn_x = 0, sum_magn_y = 0, sum_magn_z = 0;
 
 	for (int i = 0; i < CNT_COMPASS_CALIBR; i++){
+		HAL_StatusTypeDef res;
+		// Читаем 6 байт из QMC5883L, начиная с регистра 0x00
+		res = HAL_I2C_Mem_Read(&hi2c1,
+							 (0x0D << 1),  // 7-битный адрес << 1
+							 0x00,         // регистр DATA OUT X LSB
+							 I2C_MEMADD_SIZE_8BIT,
+							 qmc_raw, 6, 100);
 
-		MPU6050_Read_All(&hi2c1, &(pc->MPU6050));
+		if(res != HAL_OK) {
+			retval = -1;
+			return retval;
+		}
+
 		sum_magn_x += (int16_t)((qmc_raw[1] << 8) | qmc_raw[0]);
 		sum_magn_y += (int16_t)((qmc_raw[3] << 8) | qmc_raw[2]);
 		sum_magn_z += (int16_t)((qmc_raw[5] << 8) | qmc_raw[4]);
@@ -332,40 +363,22 @@ int compass_check_pos1(struct periph_check* pc){
 	sum_magn_y = sum_magn_y/CNT_COMPASS_CALIBR;
 	sum_magn_z = sum_magn_z/CNT_COMPASS_CALIBR;
 
-	/*
-	sprintf(uart3_buf,
-	"/r/n compass_check_pos1 \r\n"
-	"sum_magn_x = %d\r\n"
-	"sum_magn_y = %d\r\n"
-	"sum_magn_z = %d\r\n"
-	sum_magn_x,
-	sum_magn_y,
-	sum_magn_z);
-	HAL_UART_Transmit(&huart3, (uint8_t*)uart3_buf, strlen(uart3_buf), 3);
-	*/
-
 	//если величина a по оси x не выходит за пределы
-	if (labs(sum_magn_x - pc->magn_x_calibr) < (MAGN_X_REF + DEVIATION)){
-		retval = (0);
-	} else {
-		retval = (-1);
+	if (labs(sum_magn_x - pc->magn_x_calibr) > MAGN_X_REF){
+		retval = -1;
 	}
 
 	//если величина a по оси y не выходит за пределы
-	if (labs(sum_magn_y - pc->magn_y_calibr) < (MAGN_Y_REF + DEVIATION)){
-		retval = (0);
-	} else {
-		retval = (-1);
+	if (labs(sum_magn_y - pc->magn_y_calibr) > MAGN_Y_REF){
+		retval = -1;
 	}
 
 	//если величина a по оси z не выходит за пределы
-	if (labs(sum_magn_z - pc->magn_z_calibr) < (MAGN_Z_REF + DEVIATION)){
-		retval = (0);
-	} else {
-		retval = (-1);
+	if (labs(sum_magn_z - pc->magn_z_calibr) > MAGN_Z_REF){
+		retval = -1;
 	}
 
-	return (retval);
+	return retval;
 }
 
 int compass_check_pos2(struct periph_check* pc)
@@ -386,40 +399,22 @@ int compass_check_pos2(struct periph_check* pc)
 	sum_magn_y = sum_magn_y/CNT_COMPASS_CALIBR;
 	sum_magn_z = sum_magn_z/CNT_COMPASS_CALIBR;
 
-	/*
-	sprintf(uart3_buf,
-	"/r/n compass_check_pos2 \r\n"
-	"sum_magn_x = %d\r\n"
-	"sum_magn_y = %d\r\n"
-	"sum_magn_z = %d\r\n"
-	sum_magn_x,
-	sum_magn_y,
-	sum_magn_z);
-	HAL_UART_Transmit(&huart3, (uint8_t*)uart3_buf, strlen(uart3_buf), 3);
-	 */
-
 	//если величина a по оси x не выходит за пределы
-	if (labs(sum_magn_x - pc->magn_x_calibr) < (MAGN_X_REF + DEVIATION)){
-		retval = (0);
-	} else {
+	if (labs(sum_magn_x - pc->magn_x_calibr) > MAGN_X_REF){
 		retval = (-1);
 	}
 
 	//если величина a по оси y не выходит за пределы
-	if (labs(sum_magn_y - pc->magn_y_calibr) < (MAGN_Y_REF + DEVIATION)){
-		retval = (0);
-	} else {
+	if (labs(sum_magn_y - pc->magn_y_calibr) > MAGN_Y_REF){
 		retval = (-1);
 	}
 
 	//если величина a по оси z не выходит за пределы
-		if (labs(sum_magn_z - pc->magn_z_calibr) < (MAGN_Z_REF + DEVIATION)){
-			retval = (0);
-		} else {
-			retval = (-1);
-		}
-			return (retval);
-		}
+	if (labs(sum_magn_z - pc->magn_z_calibr) < MAGN_Z_REF){
+		retval = (-1);
+	}
+	return (retval);
+}
 
 ////////////////////////////////////////////////////// GYRO //////////////////////////////////////////////////////////////////////
 
@@ -446,25 +441,6 @@ int gyro_calibr_pos1(struct periph_check* pc)
 	pc->g_x_calibr = sum_g_x/CNT_GYRO_CALIBR;
 	pc->g_y_calibr = sum_g_y/CNT_GYRO_CALIBR;
 	pc->g_z_calibr = sum_g_z/CNT_GYRO_CALIBR;
-
-	/*
-	char uart3_buf[64] = {0};
-	sprintf(uart3_buf,
-	"/r/n gyro_calibr_pos1 \r\n"
-	"a_x_calibr = %lf\r\n"
-	"a_y_calibr = %lf\r\n"
-	"a_z_calibr = %lf\r\n"
-	"g_x_calibr = %lf\r\n"
-	"g_y_calibr = %lf\r\n"
-	"g_z_calibr = %lf\r\n",
-	pc->a_x_calibr,
-	pc->a_y_calibr,
-	pc->a_z_calibr,
-	pc->g_x_calibr,
-	pc->g_y_calibr,
-	pc->g_z_calibr);
-	HAL_UART_Transmit(&huart3, (uint8_t*)uart3_buf, strlen(uart3_buf), 3);
-	*/
 
 	//проверка только по осям x и z
 	if ((pc->a_x_calibr == 0) && (pc->a_z_calibr == 0) && (pc->g_x_calibr == 0) && (pc->g_z_calibr == 0)) {
@@ -505,25 +481,6 @@ int gyro_calibr_pos2(struct periph_check* pc){
 	pc->g_y_calibr = (pc->g_y_calibr + sum_g_y)/2;
 	pc->g_z_calibr = (pc->g_z_calibr + sum_g_z)/2;
 
-	/*
-	char uart3_buf[64] = {0};
-	sprintf(uart3_buf,
-	"/r/n gyro_calibr_pos2 \r\n"
-	"a_x_calibr = %lf\r\n"
-	"a_y_calibr = %lf\r\n"
-	"a_z_calibr = %lf\r\n"
-	"g_x_calibr = %lf\r\n"
-	"g_y_calibr = %lf\r\n"
-	"g_z_calibr = %lf\r\n",
-	pc->a_x_calibr,
-	pc->a_y_calibr,
-	pc->a_z_calibr,
-	pc->g_x_calibr,
-	pc->g_y_calibr,
-	pc->g_z_calibr);
-
-	HAL_UART_Transmit(&huart3, (uint8_t*)uart3_buf, strlen(uart3_buf), 3);
-	*/
 
 	//проверка только по осям x и z
 	if ((pc->a_x_calibr == 0) && (pc->a_z_calibr == 0) && (pc->g_x_calibr == 0) && (pc->g_z_calibr == 0)) {
@@ -559,64 +516,33 @@ int gyro_check_pos1(struct periph_check* pc){
 	sum_g_y = sum_g_y/CNT_GYRO_CALIBR;
 	sum_g_z = sum_g_z/CNT_GYRO_CALIBR;
 
-	/*
-	char uart3_buf[64] = {0};
-	sprintf(uart3_buf,
-	"/r/n gyro_check_pos1 \r\n"
-	"sum_a_x = %lf\r\n"
-	"sum_a_y = %lf\r\n"
-	"sum_a_z = %lf\r\n"
-	"sum_g_x = %lf\r\n"
-	"sum_g_y = %lf\r\n"
-	"sum_g_z = %lf\r\n",
-	sum_a_x,
-	sum_a_y,
-	sum_a_z,
-	sum_g_x,
-	sum_g_y,
-	sum_g_z);
-	HAL_UART_Transmit(&huart3, (uint8_t*)uart3_buf, strlen(uart3_buf), 3);
-	*/
-
 	//если величина a по оси x не выходит за пределы
-	if (fabs(sum_a_x - pc->a_x_calibr) < (A_X_REF + DEVIATION)){
-		retval = (0);
-	} else {
+	if (fabs(sum_a_x - pc->a_x_calibr) > (A_X_REF)){
 		retval = (-1);
 	}
 
 	//если величина a по оси y не выходит за пределы
-	if (fabs(sum_a_y - pc->a_y_calibr) < (A_Y_REF + DEVIATION)){
-		retval = (0);
-	} else {
+	if (fabs(sum_a_y - pc->a_y_calibr) > (A_Y_REF)){
 		retval = (-1);
 	}
 
 	//если величина a по оси z не выходит за пределы
-	if (fabs(sum_a_z - pc->a_z_calibr) < (A_Z_REF + DEVIATION)){
-		retval = (0);
-	} else {
+	if (fabs(sum_a_z - pc->a_z_calibr) > (A_Z_REF)){
 		retval = (-1);
 	}
 
 	//если величина g по оси x не выходит за пределы
-	if (fabs(sum_g_x - pc->g_x_calibr) < (G_X_REF + DEVIATION)){
-		retval = (0);
-	} else {
+	if (fabs(sum_g_x - pc->g_x_calibr) > (G_X_REF)){
 		retval = (-1);
 	}
 
 	//если величина g по оси y не выходит за пределы
-	if (fabs(sum_g_y - pc->g_y_calibr) < (G_Y_REF + DEVIATION)){
-		retval = (0);
-	} else {
+	if (fabs(sum_g_y - pc->g_y_calibr) > (G_Y_REF)){
 		retval = (-1);
 	}
 
 	//если величина g по оси z не выходит за пределы
-	if (fabs(sum_g_z - pc->g_z_calibr) < (G_Z_REF + DEVIATION)){
-		retval = (0);
-	} else {
+	if (fabs(sum_g_z - pc->g_z_calibr) > (G_Z_REF)){
 		retval = (-1);
 	}
 
@@ -649,24 +575,6 @@ int gyro_check_pos2(struct periph_check* pc){
 	sum_g_y = sum_g_y/CNT_GYRO_CALIBR;
 	sum_g_z = sum_g_z/CNT_GYRO_CALIBR;
 
-	/*
-	char uart3_buf[64] = {0};
-	sprintf(uart3_buf,
-	"/r/n gyro_check_pos1 \r\n"
-	"sum_a_x = %lf\r\n"
-	"sum_a_y = %lf\r\n"
-	"sum_a_z = %lf\r\n"
-	"sum_g_x = %lf\r\n"
-	"sum_g_y = %lf\r\n"
-	"sum_g_z = %lf\r\n",
-	sum_a_x,
-	sum_a_y,
-	sum_a_z,
-	sum_g_x,
-	sum_g_y,
-	sum_g_z);
-	HAL_UART_Transmit(&huart3, (uint8_t*)uart3_buf, strlen(uart3_buf), 3);
-	*/
 
 	//если величина a по оси x не выходит за пределы
 	if (fabs(sum_a_x - pc->a_x_calibr) < (A_X_REF + DEVIATION)){

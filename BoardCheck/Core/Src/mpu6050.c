@@ -155,7 +155,7 @@ void MPU6050_Read_Temp(I2C_HandleTypeDef *I2Cx, MPU6050_t *DataStruct)
 
 void MPU6050_Read_All(I2C_HandleTypeDef *I2Cx, MPU6050_t *DataStruct)
 {
-    uint8_t Rec_Data[14];
+    uint8_t Rec_Data[14] = {0};
     int16_t temp;
 
     // Read 14 BYTES of data starting from ACCEL_XOUT_H register
